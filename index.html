@@ -157,6 +157,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
     </div>
   </div>
 
+  <!-- PAINEL ADMIN -->
+  <div id="view-admin" class="hidden">
+    <div class="hero-casal">
+      <h2>🔧 Painel do Administrador</h2>
+      <p>Acesso total ao sistema. Use com responsabilidade.</p>
+    </div>
+    <div id="msgAdmin" class="msg"></div>
+    <div class="section-title">Usuários</div>
+    <div class="card" id="listaUsuarios"><p class="muted">Carregando...</p></div>
+    <div class="section-title">Vínculos</div>
+    <div class="card" id="listaVinculos"><p class="muted">Carregando...</p></div>
+    <button class="btn btn-ghost" onclick="mostrar('view-app')">← Voltar ao app</button>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase-js.min.js"></script>
@@ -223,11 +237,49 @@ async function entrarApp(){
   const { data:{ user } } = await sb.auth.getUser();
   if(!user) return mostrar('view-landing');
   await garantirPerfil(user);
-  const { data: p } = await sb.from('perfis').select('nome, termos_aceitos_em').eq('id', user.id).maybeSingle();
+  const { data: p } = await sb.from('perfis').select('nome, termos_aceitos_em, is_admin').eq('id', user.id).maybeSingle();
   document.getElementById('nomeUser').textContent = p?.nome || (user.is_anonymous?'Convidado':user.email) || '...';
   if(!p?.termos_aceitos_em){ mostrar('view-termos'); return; }
+  // botao admin
+  let btnAdm=document.getElementById('btnAdmin');
+  if(p?.is_admin){ if(!btnAdm){ btnAdm=document.createElement('button'); btnAdm.id='btnAdmin'; btnAdm.textContent='🔧 Admin'; btnAdm.onclick=abrirAdmin; document.querySelector('.btn-top').insertBefore(btnAdm, document.querySelector('.btn-top').lastChild); } btnAdm.style.display=''; }
+  else if(btnAdm){ btnAdm.style.display='none'; }
   await carregarEstado();
   mostrar('view-app');
+}
+async function abrirAdmin(){
+  await carregarAdmin();
+  mostrar('view-admin');
+}
+async function carregarAdmin(){
+  try {
+    const r=await call('admin-dados');
+    const j=await r.json();
+    if(!r.ok){ msg('msgAdmin', j.erro||'Erro', 'erro'); return; }
+    const lu=document.getElementById('listaUsuarios');
+    lu.innerHTML='';
+    (j.usuarios||[]).forEach(u=>{
+      const d=document.createElement('div'); d.className='proposta';
+      d.innerHTML=`<div class="nome">${u.nome||'(sem nome)'} ${u.is_admin?'<span class="badge pend">ADMIN</span>':''}</div><div class="txt">${u.email||''}</div>
+        <div class="row" style="margin-top:.6rem"><button class="btn btn-ghost btn-sm" onclick="adminDeletar('usuario','${u.id}')">Deletar</button></div>`;
+      lu.appendChild(d);
+    });
+    const lv=document.getElementById('listaVinculos');
+    lv.innerHTML='';
+    (j.vinculos||[]).forEach(v=>{
+      const d=document.createElement('div'); d.className='proposta';
+      d.innerHTML=`<div class="nome">${v.u1?.nome||'?'} ❤ ${v.u2?.nome||'?'}</div><div class="txt">status: ${v.status}</div>
+        <div class="row" style="margin-top:.6rem"><button class="btn btn-ghost btn-sm" onclick="adminDeletar('vinculo','${v.id}')">Deletar</button></div>`;
+      lv.appendChild(d);
+    });
+  } catch(e){ msg('msgAdmin','Erro: '+String(e),'erro'); }
+}
+async function adminDeletar(alvo, id){
+  if(!confirm('Tem certeza que deseja deletar?')) return;
+  const r=await call('admin-acoes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alvo,id})});
+  const j=await r.json();
+  if(r.ok){ msg('msgAdmin', j.mensagem, 'ok'); await carregarAdmin(); }
+  else msg('msgAdmin', j.erro||'Erro', 'erro');
 }
 async function aceitarTermos(){
   if(!document.getElementById('chkTermos').checked) return msg('msgTermos','Marque a caixa para aceitar os termos','erro');
