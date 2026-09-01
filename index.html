@@ -60,25 +60,18 @@ button.nao{background:linear-gradient(135deg,#c62828,#8e0000);color:#fff;border:
 
   <!-- AUTH -->
   <div id="view-auth">
-    <div class="card">
+    <div class="card" style="text-align:center">
       <div id="msgAuth" class="msg"></div>
-      <div id="formLogin">
-        <h2>Entrar</h2>
-        <label>Email</label><input type="email" id="loginEmail" placeholder="voce@email.com">
-        <label>Senha</label><input type="password" id="loginSenha" placeholder="••••••">
-        <button class="primary" onclick="fazerLogin()">Entrar</button>
-        <div class="link">Não tem conta? <a onclick="mostrarRegistro()">Registre-se</a></div>
-      </div>
-      <div id="formRegistro" class="hidden">
-        <h2>Criar conta</h2>
-        <label>Nome completo</label><input type="text" id="regNome" placeholder="Seu nome">
-        <label>Email</label><input type="email" id="regEmail" placeholder="voce@email.com">
-        <label>Senha</label><input type="password" id="regSenha" placeholder="mín. 6 caracteres">
-        <button class="primary" onclick="fazerRegistro()">Criar conta</button>
-        <div class="link">Já tem conta? <a onclick="mostrarLogin()">Entrar</a></div>
-      </div>
+      <h2 style="border:none;margin-top:0">💍 Sistema do Casal</h2>
+      <p class="muted" style="margin-bottom:1.2rem">Entre ou crie sua conta com um destes provedores:</p>
+      <button class="primary" style="background:linear-gradient(135deg,#4285F4,#34A853);display:flex;align-items:center;justify-content:center;gap:.6rem" onclick="loginOAuth('google')">
+        <span style="font-size:1.2rem">G</span> Entrar com Google
+      </button>
+      <button class="primary" style="background:linear-gradient(135deg,#24292e,#404a53);display:flex;align-items:center;justify-content:center;gap:.6rem" onclick="loginOAuth('github')">
+        <span style="font-size:1.2rem">⌥</span> Entrar com GitHub
+      </button>
+      <p class="muted" style="margin-top:1rem;font-size:.75rem">Ao continuar você concorda com os Termos de Serviço. App de demonstração, sem validade jurídica.</p>
     </div>
-    <p class="muted" style="text-align:center">Ao usar este app você concorda com os Termos de Serviço apresentados após o login. Este é um app de demonstração e não possui validade jurídica oficial.</p>
   </div>
 
   <!-- TERMOS -->
@@ -182,35 +175,30 @@ async function call(fn, opts={}){ return fetch(FUNC+'/'+fn, { headers: authH(), 
 
 document.getElementById('termosTexto').textContent = TERMOS;
 
-async function fazerRegistro(){
-  const nome=regNome.value, email=regEmail.value, senha=regSenha.value;
-  if(!nome||!email||!senha) return msg('msgAuth','Preencha todos os campos','erro');
+async function loginOAuth(provider){
   try {
-    const { data, error } = await sb.auth.signUp({ email, password: senha, options:{ data:{ nome } } });
-    if(error){
-      let m = error.message || JSON.stringify(error);
-      if(String(m).includes('429') || String(m).toLowerCase().includes('rate') || String(m).toLowerCase().includes('too many')) m = 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
-      return msg('msgAuth', m, 'erro');
-    }
-    const uid=data.user?.id;
-    if(uid){ setToken(data.session?.access_token); try { await sb.from('perfis').upsert({ id:uid, nome, email }); } catch(e){} return entrarApp(); }
-    msg('msgAuth','Conta criada! Confirme o email e faça login.','ok');
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: provider,
+      options: { redirectTo: window.location.origin + '/?oauth=1' }
+    });
+    if(error) return msg('msgAuth', 'Erro ao abrir '+provider+': '+error.message, 'erro');
   } catch(e){ msg('msgAuth', 'Erro: '+String(e), 'erro'); }
 }
-async function fazerLogin(){
-  const email=loginEmail.value, senha=loginSenha.value;
-  if(!email||!senha) return msg('msgAuth','Preencha email e senha','erro');
-  const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
-  if(error) return msg('msgAuth', error.message, 'erro');
-  setToken(data.session.access_token);
-  await sb.from('perfis').upsert({ id: data.user.id, nome: data.user.user_metadata?.nome||email, email });
-  entrarApp();
+async function fazerLogin(){ /* deprecated: usa OAuth */ }
+async function fazerRegistro(){ /* deprecated: usa OAuth */ }
+
+async function garantirPerfil(user){
+  const nome = user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Usuário';
+  const email = user.email || '';
+  try { await sb.from('perfis').upsert({ id: user.id, nome, email }); } catch(e){ console.error(e); }
 }
 
 async function entrarApp(){
-  // busca perfil
-  const { data: p } = await sb.from('perfis').select('nome, termos_aceitos_em').eq('id', (await sb.auth.getUser()).data.user.id).maybeSingle();
-  document.getElementById('nomeUser').textContent = p?.nome || '...';
+  const { data: { user } } = await sb.auth.getUser();
+  if(!user) return mostrar('view-auth');
+  await garantirPerfil(user);
+  const { data: p } = await sb.from('perfis').select('nome, termos_aceitos_em').eq('id', user.id).maybeSingle();
+  document.getElementById('nomeUser').textContent = p?.nome || user.email || '...';
   if(!p?.termos_aceitos_em){ mostrar('view-termos'); return; }
   await carregarEstado();
   mostrar('view-app');
